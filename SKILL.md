@@ -188,6 +188,8 @@ print('Video saved: scene-video.mp4')
 done
 ```
 
+**Important:** Veo 3 adds a watermark to the bottom of generated videos. The template automatically crops the bottom 5% of the video frame (`WATERMARK_CROP: 0.05`) to remove it. Adjust this value if the watermark size changes.
+
 Adjust `aspectRatio` to match layout:
 - Two-pillar: `"9:16"` (portrait — video will be split in half)
 - Full-width: `"16:9"` (landscape)
@@ -217,6 +219,7 @@ Replace the placeholder tokens in the template:
 | `{{FONT_SIZE}}` | `10` | Character cell height in pixels |
 | `{{CHAR_ASPECT}}` | `0.6` | Character width/height ratio |
 | `{{PILLAR_WIDTH}}` | `28vw` | Width of each pillar (two-pillar only) |
+| `{{WATERMARK_CROP}}` | `0.05` | Crop bottom N% of video to remove Veo watermark (0.05 = 5%) |
 | `{{CONTENT_HTML}}` | *(empty)* | HTML for center/overlay content area |
 | `{{DEFAULT_CHARSET}}` | `classic` | Initial character set selection |
 

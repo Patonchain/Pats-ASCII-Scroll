@@ -156,6 +156,7 @@ const LERP_FACTOR = {{LERP_FACTOR}};
 const DARK_THRESHOLD = {{DARK_THRESHOLD}};
 const SATURATION = {{SATURATION}};
 const BRIGHTNESS = {{BRIGHTNESS}};
+const WATERMARK_CROP = {{WATERMARK_CROP}};
 
 const video = document.getElementById('video');
 const progressBar = document.getElementById('progress-bar');
@@ -211,6 +212,7 @@ const fsSource = `#version 300 es
   uniform float u_darkThreshold;
   uniform float u_saturation;
   uniform float u_brightness;
+  uniform float u_wmCrop;  // crop bottom N% to remove watermark
 
   in vec2 v_texcoord;
   out vec4 fragColor;
@@ -223,7 +225,9 @@ const fsSource = `#version 300 es
 
     vec2 canvasUV = cellIndex / max(totalCells - 1.0, 1.0);
 
-    float halfVideoAspect = (u_videoSize.x * u_cropW) / u_videoSize.y;
+    // Effective video height after watermark crop
+    float effectiveH = 1.0 - u_wmCrop;
+    float halfVideoAspect = (u_videoSize.x * u_cropW) / (u_videoSize.y * effectiveH);
     float canvasAspect = u_resolution.x / u_resolution.y;
 
     vec2 videoUV;
@@ -238,8 +242,11 @@ const fsSource = `#version 300 es
       videoUV.y = canvasUV.y;
     }
 
+    // Remap Y to skip watermark region at bottom
+    videoUV.y = videoUV.y * effectiveH;
+
     if (videoUV.x < u_cropX || videoUV.x > u_cropX + u_cropW ||
-        videoUV.y < 0.0 || videoUV.y > 1.0) {
+        videoUV.y < 0.0 || videoUV.y > effectiveH) {
       fragColor = vec4(0.0, 0.0, 0.0, 0.0);
       return;
     }
@@ -305,7 +312,7 @@ function createPillarRenderer(canvasEl, cropX, cropW) {
 
   const u = {};
   ['u_video','u_atlas','u_resolution','u_cellSize','u_numChars','u_atlasSize',
-   'u_videoSize','u_cropX','u_cropW','u_darkThreshold','u_saturation','u_brightness'
+   'u_videoSize','u_cropX','u_cropW','u_darkThreshold','u_saturation','u_brightness','u_wmCrop'
   ].forEach(name => {
     u[name] = gl.getUniformLocation(prog, name);
   });
@@ -356,6 +363,7 @@ function createPillarRenderer(canvasEl, cropX, cropW) {
       gl.uniform1f(u.u_darkThreshold, DARK_THRESHOLD);
       gl.uniform1f(u.u_saturation, SATURATION);
       gl.uniform1f(u.u_brightness, BRIGHTNESS);
+      gl.uniform1f(u.u_wmCrop, WATERMARK_CROP);
 
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
@@ -383,6 +391,7 @@ let targetProgress = 0;
 let currentProgress = 0;
 let videoReady = false;
 let seeking = false;
+let seekStartTime = 0;
 let needsDraw = true;
 
 window.addEventListener('scroll', () => {
@@ -407,15 +416,25 @@ function render() {
   requestAnimationFrame(render);
   if (!videoReady) return;
 
+  const prevProgress = currentProgress;
   currentProgress += (targetProgress - currentProgress) * LERP_FACTOR;
 
   const targetTime = currentProgress * video.duration;
+
+  // Unstick seeks that take too long (browser dropped it)
+  if (seeking && performance.now() - seekStartTime > 400) {
+    seeking = false;
+  }
+
   if (!seeking && Math.abs(video.currentTime - targetTime) > 0.03) {
     seeking = true;
+    seekStartTime = performance.now();
     video.currentTime = targetTime;
   }
 
-  if (needsDraw) {
+  // Redraw when: seeked completed, progress is actively changing, or forced
+  const isMoving = Math.abs(currentProgress - prevProgress) > 0.0001;
+  if (needsDraw || isMoving) {
     needsDraw = false;
     leftRenderer.draw();
     rightRenderer.draw();
